@@ -360,15 +360,15 @@ RoverPositionControl::control_attitude(const vehicle_attitude_s &att, const vehi
 void
 RoverPositionControl::control_rates(const vehicle_angular_velocity_s &rates, const vehicle_rates_setpoint_s &rates_sp)
 {
-	control_input.yaw_rate_setpoint = rates_sp.yaw;
-	float control_effort = _yaw_ctrl.control_euler_rate(control_input);
-	control_effort = math::constrain(control_effort, -1.0f, 1.0f);
+	// control_input.yaw_rate_setpoint = rates_sp.yaw;
+	// float control_effort = _yaw_ctrl.control_euler_rate(control_input);
+	// control_effort = math::constrain(control_effort, -1.0f, 1.0f);
 
-	_act_controls.control[actuator_controls_s::INDEX_YAW] = control_effort;
+	// _act_controls.control[actuator_controls_s::INDEX_YAW] = control_effort;
 
-	const float control_throttle = rates_sp.thrust_body[0];
+	// const float control_throttle = rates_sp.thrust_body[0];
 
-	_act_controls.control[actuator_controls_s::INDEX_THROTTLE] =  math::constrain(control_throttle, 0.0f, 1.0f);
+	// _act_controls.control[actuator_controls_s::INDEX_THROTTLE] =  math::constrain(control_throttle, 0.0f, 1.0f);
 
 }
 

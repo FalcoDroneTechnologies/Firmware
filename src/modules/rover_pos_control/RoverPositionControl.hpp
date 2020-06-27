@@ -46,7 +46,6 @@
 #include <drivers/drv_hrt.h>
 #include <lib/ecl/geo/geo.h>
 #include <lib/l1/ECL_L1_Pos_Controller.hpp>
-// #include <lib/ecl/attitude_fw/ecl_yaw_controller.h>
 #include <lib/mathlib/mathlib.h>
 #include <lib/perf/perf_counter.h>
 #include <lib/pid/pid.h>
@@ -143,7 +142,7 @@ private:
 	uint8_t _pos_reset_counter{0};		// captures the number of times the estimator has reset the horizontal position
 
 	ECL_L1_Pos_Controller				_gnd_control;
-	ECL_YawController				_yaw_control;
+	// RoverRateController				_yaw_control;
 
 	enum UGV_POSCTRL_MODE {
 		UGV_POSCTRL_MODE_AUTO,
@@ -202,6 +201,6 @@ private:
 					 const position_setpoint_triplet_s &_pos_sp_triplet);
 	void		control_velocity(const matrix::Vector3f &current_velocity, const position_setpoint_triplet_s &pos_sp_triplet);
 	void		control_attitude(const vehicle_attitude_s &att, const vehicle_attitude_setpoint_s &att_sp);
-	void		control_rates(const vehicle_rates_s &rates, const vehicle_rates_setpoint_s &rates_sp);
+	void		control_rates(const vehicle_angular_velocity_s &rates, const vehicle_rates_setpoint_s &rates_sp);
 
 };
