@@ -31,7 +31,7 @@
  *
  ****************************************************************************/
 
-#include "module.h"
+#include "PrintStatus.h"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
@@ -41,7 +41,7 @@
 #include <uORB/topics/sensor_combined.h>
 
 
-int Module::print_status()
+int PrintStatus::print_status()
 {
 	PX4_INFO("Running");
 	// TODO: print additional runtime information about the state of the module
@@ -49,7 +49,7 @@ int Module::print_status()
 	return 0;
 }
 
-int Module::custom_command(int argc, char *argv[])
+int PrintStatus::custom_command(int argc, char *argv[])
 {
 	/*
 	if (!is_running()) {
@@ -68,9 +68,9 @@ int Module::custom_command(int argc, char *argv[])
 }
 
 
-int Module::task_spawn(int argc, char *argv[])
+int PrintStatus::task_spawn(int argc, char *argv[])
 {
-	_task_id = px4_task_spawn_cmd("module",
+        _task_id = px4_task_spawn_cmd("PrintStatus",
 				      SCHED_DEFAULT,
 				      SCHED_PRIORITY_DEFAULT,
 				      1024,
@@ -85,7 +85,7 @@ int Module::task_spawn(int argc, char *argv[])
 	return 0;
 }
 
-Module *Module::instantiate(int argc, char *argv[])
+PrintStatus *PrintStatus::instantiate(int argc, char *argv[])
 {
 	int example_param = 0;
 	bool example_flag = false;
@@ -130,12 +130,12 @@ Module *Module::instantiate(int argc, char *argv[])
 	return instance;
 }
 
-Module::Module(int example_param, bool example_flag)
+PrintStatus::PrintStatus(int example_param, bool example_flag)
 	: ModuleParams(nullptr)
 {
 }
 
-void Module::run()
+void PrintStatus::run()
 {
 	// Example: run the loop synchronized to the sensor_combined topic publication
 	int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
@@ -145,39 +145,7 @@ void Module::run()
 	fds[0].events = POLLIN;
 
 	// initialize parameters
-        parameters_update(true);using matrix::Vector2f;
-        using matrix::Vector3f;
-
-        class AirspeedModule : public ModuleBase<AirspeedModule>, public ModuleParams,
-                public px4::ScheduledWorkItem
-        {
-        public:
-
-                AirspeedModule();
-
-                ~AirspeedModule() override;
-
-                /** @see ModuleBase */
-                static int task_spawn(int argc, char *argv[]);
-
-                /** @see ModuleBase */
-                static int custom_command(int argc, char *argv[]);
-
-                /** @see ModuleBase */
-                static int print_usage(const char *reason = nullptr);
-
-        private:
-
-                void Run() override;
-
-                static constexpr int MAX_NUM_AIRSPEED_SENSORS = 3; /**< Support max 3 airspeed sensors */
-                enum airspeed_index {
-                        DISABLED_INDEX = -1,
-                        GROUND_MINUS_WIND_INDEX,
-                        FIRST_SENSOR_INDEX,
-                        SECOND_SENSOR_INDEX,
-                        THIRD_SENSOR_INDEX
-                };
+	parameters_update(true);
 
 	while (!should_exit()) {
 
@@ -207,7 +175,7 @@ void Module::run()
 	orb_unsubscribe(sensor_combined_sub);
 }
 
-void Module::parameters_update(bool force)
+void PrintStatus::parameters_update(bool force)
 {
 	// check for parameter updates
 	if (_parameter_update_sub.updated() || force) {
@@ -220,7 +188,7 @@ void Module::parameters_update(bool force)
 	}
 }
 
-int Module::print_usage(const char *reason)
+int PrintStatus::print_usage(const char *reason)
 {
 	if (reason) {
 		PX4_WARN("%s\n", reason);
@@ -251,7 +219,7 @@ $ module start -f -p 42
 	return 0;
 }
 
-int module_main(int argc, char *argv[])
+int PrintStatus_main(int argc, char *argv[])
 {
-	return Module::main(argc, argv);
+        return PrintStatus::main(argc, argv);
 }

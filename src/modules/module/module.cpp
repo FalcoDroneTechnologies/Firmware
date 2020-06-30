@@ -43,7 +43,7 @@
 
 int Module::print_status()
 {
-	PX4_INFO("Running");
+    PX4_INFO("Running...");
 	// TODO: print additional runtime information about the state of the module
 
 	return 0;
@@ -145,41 +145,13 @@ void Module::run()
 	fds[0].events = POLLIN;
 
 	// initialize parameters
-        parameters_update(true);using matrix::Vector2f;
+	parameters_update(true);using matrix::Vector2f;
         using matrix::Vector3f;
-
-        class AirspeedModule : public ModuleBase<AirspeedModule>, public ModuleParams,
-                public px4::ScheduledWorkItem
-        {
-        public:
-
-                AirspeedModule();
-
-                ~AirspeedModule() override;
-
-                /** @see ModuleBase */
-                static int task_spawn(int argc, char *argv[]);
-
-                /** @see ModuleBase */
-                static int custom_command(int argc, char *argv[]);
-
-                /** @see ModuleBase */
-                static int print_usage(const char *reason = nullptr);
-
-        private:
-
-                void Run() override;
-
-                static constexpr int MAX_NUM_AIRSPEED_SENSORS = 3; /**< Support max 3 airspeed sensors */
-                enum airspeed_index {
-                        DISABLED_INDEX = -1,
-                        GROUND_MINUS_WIND_INDEX,
-                        FIRST_SENSOR_INDEX,
-                        SECOND_SENSOR_INDEX,
-                        THIRD_SENSOR_INDEX
-                };
+        
 
 	while (!should_exit()) {
+
+
 
 		// wait for up to 1000ms for data
 		int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
