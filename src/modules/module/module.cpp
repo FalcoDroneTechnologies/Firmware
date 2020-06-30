@@ -39,6 +39,7 @@
 
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_combined.h>
+#include <uORB/topics/vehicle_local_position.h>
 
 
 int Module::print_status()
@@ -139,9 +140,9 @@ void Module::run()
 {
 	// Example: run the loop synchronized to the sensor_combined topic publication
 	int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
-
+    int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
 	px4_pollfd_struct_t fds[1];
-	fds[0].fd = sensor_combined_sub;
+    fds[0].fd = vehicle_local_pos_fd;
 	fds[0].events = POLLIN;
 
 	// initialize parameters
@@ -167,9 +168,18 @@ void Module::run()
 
 		} else if (fds[0].revents & POLLIN) {
 
-			struct sensor_combined_s sensor_combined;
-			orb_copy(ORB_ID(sensor_combined), sensor_combined_sub, &sensor_combined);
-			// TODO: do something with the data...
+            struct vehicle_local_position_s loc_pos;
+            /* copy sensors raw data into local buffer */
+            orb_copy(ORB_ID(vehicle_local_position), vehicle_local_pos_fd, &loc_pos);
+
+            PX4_INFO("Local Velocity:\t%8.4f\t%8.4f\t%8.4f",
+                 (double)loc_pos.vx,
+                 (double)loc_pos.vy,
+                 (double)loc_pos.vz);
+            PX4_INFO("Local Position:\t%8.4f\t%8.4f\t%8.4f",
+                 (double)loc_pos.x,
+                 (double)loc_pos.y,
+                 (double)loc_pos.z);
 
 		}
 
