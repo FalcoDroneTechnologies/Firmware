@@ -40,7 +40,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/vehicle_local_position.h>
-
+#include <uORB/topics/actuator_outputs.h>
 
 int Module::print_status()
 {
@@ -140,10 +140,27 @@ void Module::run()
 {
 	// Example: run the loop synchronized to the sensor_combined topic publication
 	int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
-    int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
-	px4_pollfd_struct_t fds[1];
-    fds[0].fd = vehicle_local_pos_fd;
-	fds[0].events = POLLIN;
+    //int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
+    int actuator_outputs_fd = orb_subscribe(ORB_ID(actuator_outputs));
+
+    /* advertise attitude topic */
+    struct actuator_outputs_s act_out;
+    memset(&act_out, 0, sizeof(act_out));
+    orb_advert_t act_out_pub = orb_advertise(ORB_ID(actuator_outputs), &act_out);
+
+
+//    px4_pollfd_struct_t fds[1];
+//    fds[0].fd = vehicle_local_pos_fd;
+//	fds[0].events = POLLIN;
+
+    px4_pollfd_struct_t fds[] = {
+           // { .fd = vehicle_local_pos_fd,   .events = POLLIN },
+
+           { .fd = actuator_outputs_fd,   .events = POLLIN },
+
+        };
+
+
 
 	// initialize parameters
 	parameters_update(true);using matrix::Vector2f;
@@ -155,9 +172,9 @@ void Module::run()
 
 
 		// wait for up to 1000ms for data
-		int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
+        int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
 
-		if (pret == 0) {
+        if (pret == 0) {
 			// Timeout: let the loop run anyway, don't do `continue` here
 
 		} else if (pret < 0) {
@@ -168,20 +185,31 @@ void Module::run()
 
 		} else if (fds[0].revents & POLLIN) {
 
-            struct vehicle_local_position_s loc_pos;
+            //struct vehicle_local_position_s loc_pos;
             /* copy sensors raw data into local buffer */
-            orb_copy(ORB_ID(vehicle_local_position), vehicle_local_pos_fd, &loc_pos);
+            //orb_copy(ORB_ID(vehicle_local_position), vehicle_local_pos_fd, &loc_pos);
 
-            PX4_INFO("Local Velocity:\t%8.4f\t%8.4f\t%8.4f",
-                 (double)loc_pos.vx,
-                 (double)loc_pos.vy,
-                 (double)loc_pos.vz);
-            PX4_INFO("Local Position:\t%8.4f\t%8.4f\t%8.4f",
-                 (double)loc_pos.x,
-                 (double)loc_pos.y,
-                 (double)loc_pos.z);
+           // struct actuator_outputs_s act_out_copy;
+            /* copy sensors raw data into local buffer */
+           // orb_copy(ORB_ID(actuator_outputs), actuator_outputs_fd, &act_out_copy);
+
+//            PX4_INFO("Local Velocity:\t%8.4f\t%8.4f\t%8.4f",
+//                 (double)loc_pos.vx,
+//                 (double)loc_pos.vy,
+//                 (double)loc_pos.vz);
+//            PX4_INFO("Local Position:\t%8.4f\t%8.4f\t%8.4f",
+//                 (double)loc_pos.x,
+//                 (double)loc_pos.y,
+//                 (double)loc_pos.z);
+            //act_out = act_out_copy;
+            act_out.output[0] = 1200;
+
+
+            orb_publish(ORB_ID(actuator_outputs), act_out_pub, &act_out);
 
 		}
+
+
 
 		parameters_update();
 	}
