@@ -36,7 +36,11 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <uORB/Subscription.hpp>
+#include <uORB/Publication.hpp>
+#include <uORB/uORB.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/actuator_controls.h>
+
 
 extern "C" __EXPORT int module_main(int argc, char *argv[]);
 
@@ -84,5 +88,12 @@ private:
 	// Subscriptions
 	uORB::Subscription	_parameter_update_sub{ORB_ID(parameter_update)};
 
+    //Publications
+    uORB::Publication<actuator_controls_s> _actuator_controls_pub2{ORB_ID(actuator_controls_6)};
+    uORB::Publication<actuator_controls_s>		_actuator_controls_pub{ORB_ID(actuator_controls_0)};  /**< actuator controls publication */
+
+    actuator_controls_s				_act_controls{};		/**< direct control of actuators */
+
+    actuator_controls_s				_aux_act_controls{};
 };
 

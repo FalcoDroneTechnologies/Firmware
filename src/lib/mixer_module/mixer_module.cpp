@@ -46,10 +46,14 @@ MixingOutput::MixingOutput(uint8_t max_num_outputs, OutputModuleInterface &inter
 			   bool support_esc_calibration, bool ramp_up)
 	: ModuleParams(&interface),
 	  _control_subs{
-	{&interface, ORB_ID(actuator_controls_0)},
-	{&interface, ORB_ID(actuator_controls_1)},
-	{&interface, ORB_ID(actuator_controls_2)},
-	{&interface, ORB_ID(actuator_controls_3)}
+    {&interface, ORB_ID(actuator_controls_0)},
+    {&interface, ORB_ID(actuator_controls_1)},
+    {&interface, ORB_ID(actuator_controls_2)},
+    {&interface, ORB_ID(actuator_controls_3)},
+    {&interface, nullptr},
+    {&interface, nullptr},
+    {&interface, ORB_ID(actuator_controls_6)}
+
 },
 _scheduling_policy(scheduling_policy),
 _support_esc_calibration(support_esc_calibration),

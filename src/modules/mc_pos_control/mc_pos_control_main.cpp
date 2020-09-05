@@ -353,7 +353,7 @@ MulticopterPositionControl::parameters_update(bool force)
 			_param_mpc_tiltmax_air.set(MAX_SAFE_TILT_DEG);
 			_param_mpc_tiltmax_air.commit();
 			mavlink_log_critical(&_mavlink_log_pub, "Tilt constrained to safe value");
-		}
+        }
 
 		if (_param_mpc_tiltmax_lnd.get() > _param_mpc_tiltmax_air.get()) {
 			_param_mpc_tiltmax_lnd.set(_param_mpc_tiltmax_air.get());
@@ -622,7 +622,7 @@ MulticopterPositionControl::Run()
 			// limit altitude only if local position is valid
 			if (PX4_ISFINITE(_states.position(2))) {
 				limit_altitude(setpoint);
-			}
+            }
 
 			// handle smooth takeoff
 			_takeoff.updateTakeoffState(_control_mode.flag_armed, _vehicle_land_detected.landed, constraints.want_takeoff,

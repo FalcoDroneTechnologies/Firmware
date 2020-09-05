@@ -42,6 +42,7 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/actuator_outputs.h>
 
+
 int Module::print_status()
 {
     PX4_INFO("Running...");
@@ -97,7 +98,8 @@ Module *Module::instantiate(int argc, char *argv[])
 	const char *myoptarg = nullptr;
 
 	// parse CLI arguments
-	while ((ch = px4_getopt(argc, argv, "p:f", &myoptind, &myoptarg)) != EOF) {
+    while ((ch = px4_getopt(argc, argv, "p:f", &myoptind,
+&myoptarg)) != EOF) {
 		switch (ch) {
 		case 'p':
 			example_param = (int)strtol(myoptarg, nullptr, 10);
@@ -108,7 +110,7 @@ Module *Module::instantiate(int argc, char *argv[])
 			break;
 
 		case '?':
-			error_flag = true;
+            error_flag = true;
 			break;
 
 		default:
@@ -140,23 +142,26 @@ void Module::run()
 {
 	// Example: run the loop synchronized to the sensor_combined topic publication
 	int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
-    //int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
-    int actuator_outputs_fd = orb_subscribe(ORB_ID(actuator_outputs));
+    int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
+    //int actuator_outputs_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
     /* advertise attitude topic */
-    struct actuator_outputs_s act_out;
-    memset(&act_out, 0, sizeof(act_out));
-    orb_advert_t act_out_pub = orb_advertise(ORB_ID(actuator_outputs), &act_out);
+   // struct actuator_outputs_s act_out;
+   // memset(&act_out, 0, sizeof(act_out));
+    //orb_advert_t act_out_pub = orb_advertise(ORB_ID(actuator_outputs), &act_out);
 
 
 //    px4_pollfd_struct_t fds[1];
 //    fds[0].fd = vehicle_local_pos_fd;
 //	fds[0].events = POLLIN;
 
-    px4_pollfd_struct_t fds[] = {
-           // { .fd = vehicle_local_pos_fd,   .events = POLLIN },
 
-           { .fd = actuator_outputs_fd,   .events = POLLIN },
+
+
+    px4_pollfd_struct_t fds[] = {
+            { .fd = vehicle_local_pos_fd,   .events = POLLIN },
+
+           // { .fd = actuator_outputs_fd,   .events = POLLIN },
 
         };
 
@@ -165,7 +170,7 @@ void Module::run()
 	// initialize parameters
 	parameters_update(true);using matrix::Vector2f;
         using matrix::Vector3f;
-        
+
 
 	while (!should_exit()) {
 
@@ -189,23 +194,43 @@ void Module::run()
             /* copy sensors raw data into local buffer */
             //orb_copy(ORB_ID(vehicle_local_position), vehicle_local_pos_fd, &loc_pos);
 
-           // struct actuator_outputs_s act_out_copy;
-            /* copy sensors raw data into local buffer */
-           // orb_copy(ORB_ID(actuator_outputs), actuator_outputs_fd, &act_out_copy);
-
-//            PX4_INFO("Local Velocity:\t%8.4f\t%8.4f\t%8.4f",
-//                 (double)loc_pos.vx,
-//                 (double)loc_pos.vy,
-//                 (double)loc_pos.vz);
-//            PX4_INFO("Local Position:\t%8.4f\t%8.4f\t%8.4f",
-//                 (double)loc_pos.x,
-//                 (double)loc_pos.y,
-//                 (double)loc_pos.z);
-            //act_out = act_out_copy;
-            act_out.output[0] = 1200;
 
 
-            orb_publish(ORB_ID(actuator_outputs), act_out_pub, &act_out);
+            _aux_act_controls.timestamp = hrt_absolute_time();
+            // set the first output to 50% positive (this would rotate a servo halfway into one of its directions)
+            _aux_act_controls.control[1] = -1.0f;
+            _aux_act_controls.control[2] = -1.0f;
+            _actuator_controls_pub2.publish(_aux_act_controls);
+
+            PX4_INFO("Going to sleep");
+            sleep(3);
+            PX4_INFO("Good night's sleep");
+            _aux_act_controls.timestamp = hrt_absolute_time();
+
+            _aux_act_controls.control[1] = 0.0f;
+            _aux_act_controls.control[2] = 0.0f;
+            _actuator_controls_pub2.publish(_aux_act_controls);
+
+            PX4_INFO("Going to sleep");
+            sleep(3);
+            PX4_INFO("Good night's sleep");
+            _aux_act_controls.timestamp = hrt_absolute_time();
+
+            _aux_act_controls.control[1] = 1.5f;
+            _aux_act_controls.control[2] = 1.5f;
+            _actuator_controls_pub2.publish(_aux_act_controls);
+
+            PX4_INFO("Going to sleep");
+            sleep(3);
+            PX4_INFO("Good night's sleep");
+            _aux_act_controls.timestamp = hrt_absolute_time();
+
+
+
+
+            _actuator_controls_pub2.publish(_aux_act_controls);
+
+
 
 		}
 
