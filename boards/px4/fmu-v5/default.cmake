@@ -71,6 +71,7 @@ px4_add_board(
 		events
 		fw_att_control
 		fw_pos_control_l1
+		fdt_position_motor
 		land_detector
 		landing_target_estimator
 		load_mon
