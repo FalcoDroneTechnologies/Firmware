@@ -28,6 +28,7 @@ px4_add_board(
 		dataman
 		ekf2
 		events
+		fdt_position_motor
 		fw_att_control
 		fw_pos_control_l1
 		land_detector

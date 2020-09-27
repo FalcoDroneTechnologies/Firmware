@@ -70,6 +70,12 @@ public:
 	/** @see ModuleBase::print_status() */
 	int print_status() override;
 
+    /** @see ModuleBase::print_status() */
+    int start_up();
+
+    /** @see ModuleBase::print_status() */
+    struct vehicle_local_position_s NED(int vehicle_local_position_sub, const px4_pollfd_struct_t &fds);
+
 private:
 
 	/**

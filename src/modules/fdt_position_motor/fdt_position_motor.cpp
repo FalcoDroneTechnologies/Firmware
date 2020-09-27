@@ -138,111 +138,64 @@ fdt_position_motor::fdt_position_motor(int example_param, bool example_flag)
 {
 }
 
+
 void fdt_position_motor::run()
 {
-    start_up()
+     PX4_INFO("Running....");
+     int sensor_combined_sub = fdt_position_motor::start_up();
+     // Example: run the loop synchronized to the sensor_combined topic publication
 
-	// Example: run the loop synchronized to the sensor_combined topic publication
-	int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
-    int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
-    //int actuator_outputs_fd = orb_subscribe(ORB_ID(actuator_outputs));
+     int vehicle_local_position_sub = orb_subscribe(ORB_ID(vehicle_local_position));
 
-    /* advertise attitude topic */
-   // struct actuator_outputs_s act_out;
-   // memset(&act_out, 0, sizeof(act_out));
-    //orb_advert_t act_out_pub = orb_advertise(ORB_ID(actuator_outputs), &act_out);
+     px4_pollfd_struct_t fds[] = {
+             { .fd = vehicle_local_position_sub,   .events = POLLIN }};
 
+    int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
+    struct vehicle_local_position_s loc_pos = fdt_position_motor::NED(vehicle_local_position_sub, fds);
 
-//    px4_pollfd_struct_t fds[1];
-//    fds[0].fd = vehicle_local_pos_fd;
-//	fds[0].events = POLLIN;
+    PX4_INFO("NED z & vz:\t%8.4f\t%8.4f",
+                        (double)loc_pos.z,
+                        (double)loc_pos.vz);
+//     px4_pollfd_struct_t fds[1];
+//     fds[0].fd = sensor_combined_sub;
+//     fds[0].events = POLLIN;
 
+     // initialize parameters
+     parameters_update(true);
 
+     while (!should_exit()) {
 
+        loc_pos = fdt_position_motor::NED(vehicle_local_position_sub, fds);
 
-    px4_pollfd_struct_t fds[] = {
-            { .fd = vehicle_local_pos_fd,   .events = POLLIN },
+         PX4_INFO("NED z & vz:\t%8.4f\t%8.4f",
+                             (double)loc_pos.z,
+                             (double)loc_pos.vz);
 
-           // { .fd = actuator_outputs_fd,   .events = POLLIN },
+//         // wait for up to 1000ms for data
+//         int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
 
-        };
+//         if (pret == 0) {
+//             // Timeout: let the loop run anyway, don't do `continue` here
 
+//         } else if (pret < 0) {
+//             // this is undesirable but not much we can do
+//             PX4_ERR("poll error %d, %d", pret, errno);
+//             px4_usleep(50000);
+//             continue;
 
+//         } else if (fds[0].revents & POLLIN) {
 
-	// initialize parameters
-	parameters_update(true);using matrix::Vector2f;
-        using matrix::Vector3f;
+//             struct sensor_combined_s sensor_combined;
+//             orb_copy(ORB_ID(sensor_combined), sensor_combined_sub, &sensor_combined);
+//             // TODO: do something with the data...
 
-
-	while (!should_exit()) {
-
-
-
-		// wait for up to 1000ms for data
-        int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
-
-        if (pret == 0) {
-			// Timeout: let the loop run anyway, don't do `continue` here
-
-		} else if (pret < 0) {
-			// this is undesirable but not much we can do
-			PX4_ERR("poll error %d, %d", pret, errno);
-			px4_usleep(50000);
-			continue;
-
-		} else if (fds[0].revents & POLLIN) {
-
-            //struct vehicle_local_position_s loc_pos;
-            /* copy sensors raw data into local buffer */
-            //orb_copy(ORB_ID(vehicle_local_position), vehicle_local_pos_fd, &loc_pos);
+//         }
 
 
+     }
 
-//            _aux_act_controls.timestamp = hrt_absolute_time();
-//            // set the first output to 50% positive (this would rotate a servo halfway into one of its directions)
-//            _aux_act_controls.control[1] = -1.0f;
-//            _aux_act_controls.control[2] = -1.0f;
-//            _actuator_controls_pub2.publish(_aux_act_controls);
-
-//            PX4_INFO("Going to sleep");
-//            sleep(3);
-//            PX4_INFO("Good night's sleep");
-//            _aux_act_controls.timestamp = hrt_absolute_time();
-
-//            _aux_act_controls.control[1] = 0.0f;
-//            _aux_act_controls.control[2] = 0.0f;
-//            _actuator_controls_pub2.publish(_aux_act_controls);
-
-//            PX4_INFO("Going to sleep");
-//            sleep(3);
-//            PX4_INFO("Good night's sleep");
-//            _aux_act_controls.timestamp = hrt_absolute_time();
-
-//            _aux_act_controls.control[1] = 1.5f;
-//            _aux_act_controls.control[2] = 1.5f;
-//            _actuator_controls_pub2.publish(_aux_act_controls);
-
-//            PX4_INFO("Going to sleep");
-//            sleep(3);
-//            PX4_INFO("Good night's sleep");
-//            _aux_act_controls.timestamp = hrt_absolute_time();
-
-
-
-
-//            _actuator_controls_pub2.publish(_aux_act_controls);
-
-
-
-		}
-
-
-
-		parameters_update();
-	}
-
-	orb_unsubscribe(sensor_combined_sub);
-}
+     orb_unsubscribe(sensor_combined_sub);
+ }
 
 void fdt_position_motor::parameters_update(bool force)
 {
@@ -253,7 +206,7 @@ void fdt_position_motor::parameters_update(bool force)
 		_parameter_update_sub.copy(&update);
 
 		// update parameters from storage
-                updateParams();force
+                updateParams();
 	}
 }
 
@@ -293,9 +246,51 @@ int fdt_position_motor_main(int argc, char *argv[])
         return fdt_position_motor::main(argc, argv);
 }
 
-void fdt_position_motor::start_up()
+int fdt_position_motor::start_up()
 {
-         PX4_INFO("Starting Up")
+    PX4_INFO("Starting Up...");
+    int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
+    return sensor_combined_sub;
+}
+
+
+struct vehicle_local_position_s fdt_position_motor::NED(int vehicle_local_position_sub, const px4_pollfd_struct_t &fds)
+{
+//    int vehicle_local_position_sub = orb_subscribe(ORB_ID(vehicle_local_position));
+//    px4_pollfd_struct_t fds[1];
+//    fds[0].fd = vehicle_local_position_sub;
+//    fds[0].events = POLLIN;
+
+    struct vehicle_local_position_s loc_pos;
+
+    // initialize parameters
+    parameters_update(true);
+
+    // wait for up to 1000ms for data
+    int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
+
+    if (pret == 0) {
+        // Timeout: let the loop run anyway, don't do `continue` here
+        PX4_INFO("Timeout");
+
+    } else if (pret < 0) {
+        // this is undesirable but not much we can do
+        PX4_ERR("poll error %d, %d", pret, errno);
+        px4_usleep(50000);
+
+
+    } else if (fds[0].revents & POLLIN) {
+
+
+        orb_copy(ORB_ID(vehicle_local_position), vehicle_local_position_sub, &loc_pos);
+
+
+
+
+    }
+    parameters_update();
+
+    return loc_pos;
 
 
 }
