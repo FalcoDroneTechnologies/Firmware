@@ -206,7 +206,8 @@ bool PositionControl::_updateSuccessful()
 {
 	bool valid = true;
 
-	// For each controlled state the estimate has to be valid
+    // For each controlled state the estimate has to be valid_thr_sp = Vector3f(0, 0, _acc_sp(2));
+
 	for (int i = 0; i <= 2; i++) {
 		if (PX4_ISFINITE(_pos_sp(i))) {
 			valid = valid && PX4_ISFINITE(_pos(i));

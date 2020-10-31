@@ -40,23 +40,46 @@
 #include <uORB/uORB.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/actuator_controls.h>
+#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+
+#include "Controller/Controller.hpp"
+#include <uORB/Publication.hpp>
+#include <uORB/Subscription.hpp>
+#include <uORB/SubscriptionCallback.hpp>
+
+#include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/vehicle_local_position_setpoint.h>
+#include <uORB/topics/airspeed.h>
+#include <uORB/topics/rc_channels.h>
+
+
+#include <float.h>
+
+
+#include <lib/controllib/blocks.hpp>
+#include <lib/flight_tasks/FlightTasks.hpp>
+
+
+
+
 
 
 extern "C" __EXPORT int fdt_position_motor_main(int argc, char *argv[]);
 
 
-class fdt_position_motor : public ModuleBase<fdt_position_motor>, public ModuleParams
+class fdt_position_motor : public ModuleBase<fdt_position_motor>, public control::SuperBlock, public ModuleParams
 {
 public:
-	fdt_position_motor(int example_param, bool example_flag);
+    fdt_position_motor(int example_param, bool example_flag);
+    ~fdt_position_motor() override;
 
-	virtual ~fdt_position_motor() = default;
+    //virtual ~fdt_position_motor() = default;
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
 
 	/** @see ModuleBase */
-	static fdt_position_motor *instantiate(int argc, char *argv[]);
+    static fdt_position_motor *instantiate(int argc, char *argv[]);
 
 	/** @see ModuleBase */
 	static int custom_command(int argc, char *argv[]);
@@ -70,11 +93,26 @@ public:
 	/** @see ModuleBase::print_status() */
 	int print_status() override;
 
-    /** @see ModuleBase::print_status() */
-    int start_up();
+    bool init();
+
 
     /** @see ModuleBase::print_status() */
-    struct vehicle_local_position_s NED(int vehicle_local_position_sub, const px4_pollfd_struct_t &fds);
+    void start_up();
+
+    /** @see ModuleBase::print_status() */
+   // struct vehicle_local_position_s NED();
+    //struct airspeed_s Airspeed(int airspeed_sub, const px4_pollfd_struct_t fds);
+    void _updateORBMessages();
+    px4_pollfd_struct_t fds[3];
+
+    //Orb Messaeg Structures
+    struct vehicle_local_position_s loc_pos;
+    struct airspeed_s loc_airspeed;
+    struct rc_channels_s _rc_input;
+
+
+
+
 
 private:
 
@@ -93,13 +131,29 @@ private:
 
 	// Subscriptions
 	uORB::Subscription	_parameter_update_sub{ORB_ID(parameter_update)};
+    int vehicle_local_position_sub = orb_subscribe(ORB_ID(vehicle_local_position));
+    int airspeed_sub = orb_subscribe(ORB_ID(airspeed));
+    int rc_channel_sub = orb_subscribe(ORB_ID(rc_channels));
 
     //Publications
     uORB::Publication<actuator_controls_s> _actuator_controls_pub2{ORB_ID(actuator_controls_6)};
     uORB::Publication<actuator_controls_s>		_actuator_controls_pub{ORB_ID(actuator_controls_0)};  /**< actuator controls publication */
 
+    Controller _control;
+    PositionControlStates _states;
+    vehicle_local_position_setpoint_s setpoint;
+
+    matrix::Vector3f position;
+    matrix::Vector3f velocity;
+    matrix::Vector3f acceleration;
+
+    hrt_abstime	_time_stamp_last_loop{0};		/**< time stamp of last loop iteration */
+
     actuator_controls_s				_act_controls{};		/**< direct control of actuators */
 
     actuator_controls_s				_aux_act_controls{};
+
+
+
 };
 

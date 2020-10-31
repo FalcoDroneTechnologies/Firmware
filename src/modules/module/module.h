@@ -40,6 +40,7 @@
 #include <uORB/uORB.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/actuator_controls.h>
+#include <uORB/topics/rc_channels.h>
 
 
 extern "C" __EXPORT int module_main(int argc, char *argv[]);
@@ -95,5 +96,9 @@ private:
     actuator_controls_s				_act_controls{};		/**< direct control of actuators */
 
     actuator_controls_s				_aux_act_controls{};
+
+    int rc_channel_sub = orb_subscribe(ORB_ID(rc_channels));
+    rc_channels_s				_rc_input{};
+
 };
 

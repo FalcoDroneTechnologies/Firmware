@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2018 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2019 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,13 +31,12 @@
 #
 ############################################################################
 
-px4_add_module(
-	MODULE templates__fdt_position_motor
-	MAIN fdt_position_motor
-	SRCS
-		fdt_position_motor.cpp
-	DEPENDS
-		modules__uORB
-		FlightTasks
-	)
+px4_add_library(Controller
+	Controller.cpp
+
+)
+target_include_directories(Controller
+	PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
 

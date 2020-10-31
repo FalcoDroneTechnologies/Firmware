@@ -41,6 +41,7 @@
 #include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/actuator_outputs.h>
+#include <uORB/topics/rc_channels.h>
 
 
 int Module::print_status()
@@ -143,27 +144,18 @@ void Module::run()
 	// Example: run the loop synchronized to the sensor_combined topic publication
 	int sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
     int vehicle_local_pos_fd = orb_subscribe(ORB_ID(vehicle_local_position));
-    //int actuator_outputs_fd = orb_subscribe(ORB_ID(actuator_outputs));
-
-    /* advertise attitude topic */
-   // struct actuator_outputs_s act_out;
-   // memset(&act_out, 0, sizeof(act_out));
-    //orb_advert_t act_out_pub = orb_advertise(ORB_ID(actuator_outputs), &act_out);
-
-
-//    px4_pollfd_struct_t fds[1];
-//    fds[0].fd = vehicle_local_pos_fd;
-//	fds[0].events = POLLIN;
+    int actuator_outputs_fd = orb_subscribe(ORB_ID(actuator_outputs));
 
 
 
 
     px4_pollfd_struct_t fds[] = {
-            { .fd = vehicle_local_pos_fd,   .events = POLLIN },
+        { .fd = vehicle_local_pos_fd,   .events = POLLIN },
 
-           // { .fd = actuator_outputs_fd,   .events = POLLIN },
+        { .fd = actuator_outputs_fd,   .events = POLLIN },
+        { .fd = rc_channel_sub,   .events = POLLIN },
 
-        };
+    };
 
 
 
@@ -192,43 +184,24 @@ void Module::run()
 
             //struct vehicle_local_position_s loc_pos;
             /* copy sensors raw data into local buffer */
-            //orb_copy(ORB_ID(vehicle_local_position), vehicle_local_pos_fd, &loc_pos);
+            orb_copy(ORB_ID(rc_channels), rc_channel_sub, &_rc_input);
+//            PX4_INFO("RC Throttle 2,3,4:\t%8.4f\t%8.4f\t%8.4f",
+//                     (double)_rc_input.channels[2],
+//                    (double)_rc_input.channels[3],
+//                    (double)_rc_input.channels[4]);
+
+            px4_usleep(10);
 
 
 
-            _aux_act_controls.timestamp = hrt_absolute_time();
+
+           _aux_act_controls.timestamp = hrt_absolute_time();
             // set the first output to 50% positive (this would rotate a servo halfway into one of its directions)
-            _aux_act_controls.control[1] = -1.0f;
-            _aux_act_controls.control[2] = -1.0f;
+            _aux_act_controls.control[1] = _rc_input.channels[2];
+            _aux_act_controls.control[2] = _rc_input.channels[2];
             _actuator_controls_pub2.publish(_aux_act_controls);
 
-            PX4_INFO("Going to sleep");
-            sleep(3);
-            PX4_INFO("Good night's sleep");
-            _aux_act_controls.timestamp = hrt_absolute_time();
 
-            _aux_act_controls.control[1] = 0.0f;
-            _aux_act_controls.control[2] = 0.0f;
-            _actuator_controls_pub2.publish(_aux_act_controls);
-
-            PX4_INFO("Going to sleep");
-            sleep(3);
-            PX4_INFO("Good night's sleep");
-            _aux_act_controls.timestamp = hrt_absolute_time();
-
-            _aux_act_controls.control[1] = 1.5f;
-            _aux_act_controls.control[2] = 1.5f;
-            _actuator_controls_pub2.publish(_aux_act_controls);
-
-            PX4_INFO("Going to sleep");
-            sleep(3);
-            PX4_INFO("Good night's sleep");
-            _aux_act_controls.timestamp = hrt_absolute_time();
-
-
-
-
-            _actuator_controls_pub2.publish(_aux_act_controls);
 
 
 
