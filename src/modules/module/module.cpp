@@ -73,12 +73,13 @@ int Module::custom_command(int argc, char *argv[])
 
 int Module::task_spawn(int argc, char *argv[])
 {
-	_task_id = px4_task_spawn_cmd("module",
-				      SCHED_DEFAULT,
-				      SCHED_PRIORITY_DEFAULT,
-				      1024,
-				      (px4_main_t)&run_trampoline,
-				      (char *const *)argv);
+
+    _task_id = px4_task_spawn_cmd("module",
+                      SCHED_DEFAULT,
+                      SCHED_PRIORITY_MAX -5,
+                      3000,
+                      (px4_main_t)&run_trampoline,
+                      (char *const *)argv);
 
 	if (_task_id < 0) {
 		_task_id = -1;
@@ -154,6 +155,7 @@ void Module::run()
 
         { .fd = actuator_outputs_fd,   .events = POLLIN },
         { .fd = rc_channel_sub,   .events = POLLIN },
+        { .fd = input_rc_channel_sub,   .events = POLLIN },
 
     };
 
@@ -177,7 +179,7 @@ void Module::run()
 		} else if (pret < 0) {
 			// this is undesirable but not much we can do
 			PX4_ERR("poll error %d, %d", pret, errno);
-			px4_usleep(50000);
+            px4_usleep(50000);
 			continue;
 
 		} else if (fds[0].revents & POLLIN) {
@@ -185,27 +187,36 @@ void Module::run()
             //struct vehicle_local_position_s loc_pos;
             /* copy sensors raw data into local buffer */
             orb_copy(ORB_ID(rc_channels), rc_channel_sub, &_rc_input);
+            orb_copy(ORB_ID(input_rc), input_rc_channel_sub, &input_rc);
 //            PX4_INFO("RC Throttle 2,3,4:\t%8.4f\t%8.4f\t%8.4f",
 //                     (double)_rc_input.channels[2],
 //                    (double)_rc_input.channels[3],
 //                    (double)_rc_input.channels[4]);
 
-            px4_usleep(10);
+//            PX4_INFO("Signal State :%d\n",
+//                     (bool)(_rc_input.signal_lost));
+//            PX4_INFO("Servo Output :\%8.4f",
+//                     (double)(_rc_input.channels[3]));
+             px4_usleep(10);
 
 
+             _aux_act_controls.timestamp = hrt_absolute_time();
+             if (input_rc.values[3] < 999) {
+                 _aux_act_controls.control[1] = 0.0;
+             }
+             else{
+                 _aux_act_controls.control[1] = _rc_input.channels[0]*0.75f-0.25f;
+                 _aux_act_controls.control[2] = _rc_input.channels[2];
+
+             }
+
+             _actuator_controls_pub2.publish(_aux_act_controls);
 
 
-           _aux_act_controls.timestamp = hrt_absolute_time();
-            // set the first output to 50% positive (this would rotate a servo halfway into one of its directions)
-            _aux_act_controls.control[1] = _rc_input.channels[2];
-            _aux_act_controls.control[2] = _rc_input.channels[2];
-            _actuator_controls_pub2.publish(_aux_act_controls);
+//             PX4_INFO("Servo Output :\%8.4f",
+//                      (double)(input_rc.values[2]));
 
-
-
-
-
-		}
+        }
 
 
 

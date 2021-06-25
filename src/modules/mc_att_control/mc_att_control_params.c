@@ -175,3 +175,101 @@ PARAM_DEFINE_FLOAT(MC_RATT_TH, 0.8f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_FLOAT(MC_MAN_TILT_TAU, 0.0f);
+
+
+
+/**
+ * @file wing_control_simple.c
+ * Parameters for simple wing control.
+ *
+ * @author Lorenz Meier <lorenz@px4.io>
+ * @author Anton Babushkin <anton@px4.io>
+ * @author Patrick Maletz
+ */
+
+/**
+ * Servo Scale Factor
+ *
+ * Scale factor applied to both wing servos.
+ *
+ * @unit unitless
+ * @min -10
+ * @max 10
+ * @decimal 2
+ * @increment 0.1
+ * @group Simple Wing Control
+ */
+PARAM_DEFINE_FLOAT(SWC_SERVO_SCALE, 1.0f);
+
+/**
+ * Servo Scale Factor L
+ *
+ * Scale factor applied to left wing servo.
+ *
+ * @unit unitless
+ * @min -10
+ * @max 10
+ * @decimal 2
+ * @increment 0.1
+ * @group Simple Wing Control
+ */
+PARAM_DEFINE_FLOAT(SWC_SERVO_L, 1.0f);
+
+/**
+ * Servo Scale Factor R
+ *
+ * Scale factor applied to left wing servo.
+ *
+ * @unit unitless
+ * @min -10
+ * @max 10
+ * @decimal 2
+ * @increment 0.1
+ * @group Simple Wing Control
+ */
+PARAM_DEFINE_FLOAT(SWC_SERVO_R, 1.0f);
+
+/**
+ * Servo Offset L
+ *
+ * Scale factor applied to left wing servo.
+ *
+ * @unit unitless
+ * @min -1
+ * @max 1
+ * @decimal 2
+ * @increment 0.1
+ * @group Simple Wing Control
+ */
+PARAM_DEFINE_FLOAT(SWC_OFFSET_L, 0.0f);
+
+/**
+ * Servo Offset R
+ *
+ * Scale factor applied to left wing servo.
+ *
+ * @unit unitless
+ * @min -1
+ * @max 1
+ * @decimal 2
+ * @increment 0.1
+ * @group Simple Wing Control
+ */
+PARAM_DEFINE_FLOAT(SWC_OFFSET_R, 0.0f);
+
+/**
+ * Servo Control Scale
+ *
+ * Scale factor for manual servo control
+ *
+ * @unit unitless
+ * @min -1
+ * @max 1
+ * @decimal 2
+ * @increment 0.1
+ * @group Simple Wing Control
+ */
+PARAM_DEFINE_FLOAT(SWC_CONT_SCALE, 0.0833f);
+
+
+

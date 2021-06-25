@@ -41,6 +41,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/rc_channels.h>
+#include <uORB/topics/input_rc.h>
 
 
 extern "C" __EXPORT int module_main(int argc, char *argv[]);
@@ -91,14 +92,14 @@ private:
 
     //Publications
     uORB::Publication<actuator_controls_s> _actuator_controls_pub2{ORB_ID(actuator_controls_6)};
-    uORB::Publication<actuator_controls_s>		_actuator_controls_pub{ORB_ID(actuator_controls_0)};  /**< actuator controls publication */
-
-    actuator_controls_s				_act_controls{};		/**< direct control of actuators */
 
     actuator_controls_s				_aux_act_controls{};
 
     int rc_channel_sub = orb_subscribe(ORB_ID(rc_channels));
     rc_channels_s				_rc_input{};
+
+    int input_rc_channel_sub = orb_subscribe(ORB_ID(input_rc));
+    input_rc_s				input_rc{};
 
 };
 

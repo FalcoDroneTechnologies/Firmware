@@ -76,7 +76,7 @@ int fdt_position_motor::task_spawn(int argc, char *argv[])
     _task_id = px4_task_spawn_cmd("module",
                       SCHED_DEFAULT,
                       SCHED_PRIORITY_MAX -5,
-                      1500,
+                      3000,
                       (px4_main_t)&run_trampoline,
                       (char *const *)argv);
 
@@ -87,6 +87,7 @@ int fdt_position_motor::task_spawn(int argc, char *argv[])
 
     return 0;
 }
+
 
 fdt_position_motor *fdt_position_motor::instantiate(int argc, char *argv[])
 {
@@ -171,24 +172,15 @@ void fdt_position_motor::run()
     fds[0] = { .fd = vehicle_local_position_sub,   .events = POLLIN };
     fds[1] = { .fd = airspeed_sub,   .events = POLLIN };
     fds[2] = { .fd = rc_channel_sub,   .events = POLLIN };
-//    fds = {{ .fd = vehicle_local_position_sub,   .events = POLLIN },
-//        { .fd = airspeed_sub,   .events = POLLIN },
-//        { .fd = rc_channel_sub,   .events = POLLIN }};
 
-     PX4_INFO("Retrieving NED");
+     PX4_INFO("Retrieving ORBs");
     _updateORBMessages();
-    //struct vehicle_local_position_s loc_pos = fdt_position_motor::NED();
-
-
-    PX4_INFO("Retrieving Airspeed");
-   //struct airspeed_s loc_airspeed = fdt_position_motor::Airspeed(airspeed_sub, fds[1]);
-
 
     PX4_INFO("NED z & vz:\t%8.4f\t%8.4f",
              (double)loc_pos.z,
              (double)loc_pos.vz);
-//    PX4_INFO("Airspeed :\t%8.4f",
-//             (double)loc_airspeed.true_airspeed_m_s);
+    PX4_INFO("Airspeed :\t%8.4f",
+             (double)loc_airspeed.true_airspeed_m_s);
 
 
      while (!should_exit()) {
@@ -198,13 +190,12 @@ void fdt_position_motor::run()
          _time_stamp_last_loop = time_stamp_now;
 
         _updateORBMessages();
-        //loc_pos = fdt_position_motor::NED();
-        //loc_airspeed = fdt_position_motor::Airspeed(airspeed_sub, fds[1]);
 
          _states.position(0) = loc_pos.x; _states.position(1) = loc_pos.y; _states.position(2) = loc_pos.z;
          _states.velocity(0) = loc_pos.vx; _states.velocity(1) = loc_pos.vy; _states.velocity(2) = loc_pos.vz;
          _states.acceleration(0) = loc_pos.ax; _states.acceleration(1) = loc_pos.ay; _states.acceleration(2) = loc_pos.az;
         _control.setState(_states,loc_airspeed.true_airspeed_m_s);
+        setpoint.z = neutral_position + _rc_input.channels[rc_channel]/10;
         _control.setInputSetpoint(setpoint);
 
 
@@ -221,19 +212,22 @@ void fdt_position_motor::run()
 
          _actuator_controls_pub2.publish(_aux_act_controls);
 
+
+
+
 //         PX4_INFO("Velocity Setpoint, Velocity Error, Acc Set Point :\t%8.4f\t%8.4f\t%8.4f",
 //                  (double)_control.vel_sp_position(2),
 //                  (double)_control.vel_error(2),
 //                  (double)_control.acc_sp_velocity(2));
 
-//         PX4_INFO("Position :\t%8.4f",
-//                  (double)loc_pos.z);
+//         PX4_INFO("Position Setpoint :\t%8.4f",
+//                  (double)_control._pos_sp(2));
+
+//         PX4_INFO("Airspeed :\t%8.4f",
+//                  (double)loc_airspeed.true_airspeed_m_s);
 
 //         PX4_INFO("Thrust Sestpoint :\t%8.4f",
 //                  (double)_control._thr_sp(2));
-         //px4_usleep(10000);
-
-
 
 
      }
@@ -306,17 +300,20 @@ void fdt_position_motor::start_up()
     PX4_INFO("Starting Up...");
      _time_stamp_last_loop = hrt_absolute_time();
 
+     //Set input RC channel
+     rc_channel = 0;
 
+     neutral_position = -0.8;
      //Set Position Demand
      setpoint = FlightTask::empty_setpoint;
-     setpoint.x = 0.0; setpoint.y = 0.0; setpoint.z = -0.8;
+     setpoint.x = 0.0; setpoint.y = 0.0; setpoint.z = neutral_position;
      _control.setInputSetpoint(setpoint);
 
     //Set PID Gains
-    matrix::Vector3f velGainP(0.0,0.0,2.0);
+    matrix::Vector3f velGainP(0.0,0.0,4.0);
     matrix::Vector3f velGainI(0.0,0.0,2.0);
     matrix::Vector3f velGainD(0.0,0.0,0.0);
-    matrix::Vector3f posGainP(0.0,0.0,1.0);
+    matrix::Vector3f posGainP(0.0,0.0,2.0);
 
     //Set Hover Thrust
     _control.setHoverThrust(0.5);
@@ -354,78 +351,6 @@ void fdt_position_motor::start_up()
 }
 
 
-//struct vehicle_local_position_s fdt_position_motor::NED()
-//{
-////    int vehicle_local_position_sub = orb_subscribe(ORB_ID(vehicle_local_position));
-
-//    struct vehicle_local_position_s loc_pos;
-
-//    // initialize parameters
-//    parameters_update(true);
-
-//    // wait for up to 1000ms for data
-//    int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
-
-//    if (pret == 0) {
-//        // Timeout: let the loop run anyway, don't do `continue` here
-//        PX4_INFO("Timeout NED");
-
-//    } else if (pret < 0) {
-//        // this is undesirable but not much we can do
-//        PX4_ERR("poll error %d, %d", pret, errno);
-//        px4_usleep(50000);
-
-
-//    } else if (fds[0].revents & POLLIN) {
-
-
-//        orb_copy(ORB_ID(vehicle_local_position), vehicle_local_position_sub, &loc_pos);
-
-
-
-
-//    }
-//    parameters_update();
-
-//    return loc_pos;
-
-
-//}
-
-//struct airspeed_s fdt_position_motor::Airspeed(int airspeed_sub, const px4_pollfd_struct_t fd)
-//{
-////    int vehicle_local_position_sub = orb_subscribe(ORB_ID(vehicle_local_position));
-//    px4_pollfd_struct_t fds[1];
-//    fds[0] = fd;
-//    struct airspeed_s loc_airspeed;
-
-//    // initialize parameters
-//    parameters_update(true);
-
-//    // wait for up to 1000ms for data
-//    int pret = px4_poll(fds, (sizeof(fds) / sizeof(fds[0])), 1000);
-
-//    if (pret == 0) {
-//        // Timeout: let the loop run anyway, don't do `continue` here
-//        PX4_INFO("Timeout Airspeed");
-
-//    } else if (pret < 0) {
-//        // this is undesirable but not much we can do
-//        PX4_ERR("poll error %d, %d", pret, errno);
-//        px4_usleep(50000);
-
-
-//    } else if (fds[0].revents & POLLIN) {
-
-
-//        orb_copy(ORB_ID(airspeed), airspeed_sub, &loc_airspeed);
-
-
-//    }
-//    parameters_update();
-
-//    return loc_airspeed;
-//}
 
 void fdt_position_motor::_updateORBMessages(){
 
@@ -446,16 +371,25 @@ void fdt_position_motor::_updateORBMessages(){
         px4_usleep(50000);
 
 
-    } else if (fds[0].revents & POLLIN) {
+    }
+    if (fds[0].revents & POLLIN) {
 
 
         orb_copy(ORB_ID(vehicle_local_position), vehicle_local_position_sub, &loc_pos);
+        //orb_copy(ORB_ID(airspeed), airspeed_sub, &loc_airspeed);
+        //orb_copy(ORB_ID(rc_channels), rc_channel_sub, &_rc_input);
+
+
+    }
+    if (fds[1].revents & POLLIN) {
+
         orb_copy(ORB_ID(airspeed), airspeed_sub, &loc_airspeed);
+
+    }
+
+    if (fds[2].revents & POLLIN) {
+
         orb_copy(ORB_ID(rc_channels), rc_channel_sub, &_rc_input);
-
-
-
-
 
     }
     parameters_update();
