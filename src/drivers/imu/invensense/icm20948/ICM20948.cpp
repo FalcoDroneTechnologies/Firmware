@@ -47,11 +47,11 @@ ICM20948::ICM20948(I2CSPIBusOption bus_option, int bus, uint32_t device, enum Ro
 	SPI(DRV_IMU_DEVTYPE_ICM20948, MODULE_NAME, bus, device, spi_mode, bus_frequency),
 	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus),
 	_drdy_gpio(drdy_gpio),
-	_px4_accel(get_device_id(), ORB_PRIO_DEFAULT, rotation),
-	_px4_gyro(get_device_id(), ORB_PRIO_DEFAULT, rotation)
+	_px4_accel(get_device_id(), rotation),
+	_px4_gyro(get_device_id(), rotation)
 {
 	if (drdy_gpio != 0) {
-		_drdy_interval_perf = perf_alloc(PC_INTERVAL, MODULE_NAME": DRDY interval");
+		_drdy_missed_perf = perf_alloc(PC_COUNT, MODULE_NAME": DRDY missed");
 	}
 
 	ConfigureSampleRate(_px4_gyro.get_max_rate_hz());
@@ -77,13 +77,12 @@ ICM20948::ICM20948(I2CSPIBusOption bus_option, int bus, uint32_t device, enum Ro
 
 ICM20948::~ICM20948()
 {
-	perf_free(_transfer_perf);
 	perf_free(_bad_register_perf);
 	perf_free(_bad_transfer_perf);
 	perf_free(_fifo_empty_perf);
 	perf_free(_fifo_overflow_perf);
 	perf_free(_fifo_reset_perf);
-	perf_free(_drdy_interval_perf);
+	perf_free(_drdy_missed_perf);
 
 	delete _slave_ak09916_magnetometer;
 }
@@ -121,13 +120,12 @@ void ICM20948::print_status()
 
 	PX4_INFO("FIFO empty interval: %d us (%.1f Hz)", _fifo_empty_interval_us, 1e6 / _fifo_empty_interval_us);
 
-	perf_print_counter(_transfer_perf);
 	perf_print_counter(_bad_register_perf);
 	perf_print_counter(_bad_transfer_perf);
 	perf_print_counter(_fifo_empty_perf);
 	perf_print_counter(_fifo_overflow_perf);
 	perf_print_counter(_fifo_reset_perf);
-	perf_print_counter(_drdy_interval_perf);
+	perf_print_counter(_drdy_missed_perf);
 
 
 	if (_slave_ak09916_magnetometer) {
@@ -156,7 +154,7 @@ void ICM20948::RunImpl()
 		// PWR_MGMT_1: Device Reset
 		RegisterWrite(Register::BANK_0::PWR_MGMT_1, PWR_MGMT_1_BIT::DEVICE_RESET);
 		_reset_timestamp = now;
-		_consecutive_failures = 0;
+		_failure_count = 0;
 		_state = STATE::WAIT_FOR_RESET;
 		ScheduleDelayed(100_ms);
 		break;
@@ -184,8 +182,8 @@ void ICM20948::RunImpl()
 				ScheduleDelayed(100_ms);
 
 			} else {
-				PX4_DEBUG("Reset not complete, check again in 10 ms");
-				ScheduleDelayed(10_ms);
+				PX4_DEBUG("Reset not complete, check again in 100 ms");
+				ScheduleDelayed(100_ms);
 			}
 		}
 
@@ -233,8 +231,8 @@ void ICM20948::RunImpl()
 	case STATE::FIFO_READ: {
 			if (_data_ready_interrupt_enabled) {
 				// scheduled from interrupt if _drdy_fifo_read_samples was set
-				if (_drdy_fifo_read_samples.fetch_and(0) == _fifo_gyro_samples) {
-					perf_count_interval(_drdy_interval_perf, now);
+				if (_drdy_fifo_read_samples.fetch_and(0) != _fifo_gyro_samples) {
+					perf_count(_drdy_missed_perf);
 				}
 
 				// push backup schedule back
@@ -265,22 +263,25 @@ void ICM20948::RunImpl()
 				} else if (samples >= 1) {
 					if (FIFORead(now, samples)) {
 						success = true;
-						_consecutive_failures = 0;
+
+						if (_failure_count > 0) {
+							_failure_count--;
+						}
 					}
 				}
 			}
 
 			if (!success) {
-				_consecutive_failures++;
+				_failure_count++;
 
 				// full reset if things are failing consistently
-				if (_consecutive_failures > 10) {
+				if (_failure_count > 10) {
 					Reset();
 					return;
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 10_ms) {
+			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_bank0_cfg[_checked_register_bank0])
 				    && RegisterCheck(_register_bank2_cfg[_checked_register_bank2])
@@ -367,10 +368,6 @@ void ICM20948::ConfigureGyro()
 
 void ICM20948::ConfigureSampleRate(int sample_rate)
 {
-	if (sample_rate == 0) {
-		sample_rate = 800; // default to ~800 Hz
-	}
-
 	// round down to nearest FIFO sample dt * SAMPLES_PER_TRANSFER
 	const float min_interval = FIFO_SAMPLE_DT * SAMPLES_PER_TRANSFER;
 	_fifo_empty_interval_us = math::max(roundf((1e6f / (float)sample_rate) / min_interval) * min_interval, min_interval);
@@ -444,12 +441,12 @@ int ICM20948::DataReadyInterruptCallback(int irq, void *context, void *arg)
 
 void ICM20948::DataReady()
 {
-	const uint8_t count = _drdy_count.fetch_add(1) + 1;
-
-	uint8_t expected = 0;
+	uint32_t expected = 0;
 
 	// at least the required number of samples in the FIFO
-	if ((count >= _fifo_gyro_samples) && _drdy_fifo_read_samples.compare_exchange(&expected, _fifo_gyro_samples)) {
+	if (((_drdy_count.fetch_add(1) + 1) >= _fifo_gyro_samples)
+	    && _drdy_fifo_read_samples.compare_exchange(&expected, _fifo_gyro_samples)) {
+
 		_drdy_count.store(0);
 		ScheduleNow();
 	}
@@ -536,10 +533,11 @@ void ICM20948::RegisterSetAndClearBits(T reg, uint8_t setbits, uint8_t clearbits
 
 uint16_t ICM20948::FIFOReadCount()
 {
+	SelectRegisterBank(REG_BANK_SEL_BIT::USER_BANK_0);
+
 	// read FIFO count
 	uint8_t fifo_count_buf[3] {};
 	fifo_count_buf[0] = static_cast<uint8_t>(Register::BANK_0::FIFO_COUNTH) | DIR_READ;
-	SelectRegisterBank(REG_BANK_SEL_BIT::USER_BANK_0);
 
 	if (transfer(fifo_count_buf, fifo_count_buf, sizeof(fifo_count_buf)) != PX4_OK) {
 		perf_count(_bad_transfer_perf);
@@ -551,18 +549,16 @@ uint16_t ICM20948::FIFOReadCount()
 
 bool ICM20948::FIFORead(const hrt_abstime &timestamp_sample, uint8_t samples)
 {
-	perf_begin(_transfer_perf);
-	FIFOTransferBuffer buffer{};
-	const size_t transfer_size = math::min(samples * sizeof(FIFO::DATA) + 3, FIFO::SIZE);
 	SelectRegisterBank(REG_BANK_SEL_BIT::USER_BANK_0);
 
+	FIFOTransferBuffer buffer{};
+	const size_t transfer_size = math::min(samples * sizeof(FIFO::DATA) + 3, FIFO::SIZE);
+
 	if (transfer((uint8_t *)&buffer, (uint8_t *)&buffer, transfer_size) != PX4_OK) {
-		perf_end(_transfer_perf);
 		perf_count(_bad_transfer_perf);
 		return false;
 	}
 
-	perf_end(_transfer_perf);
 
 	const uint16_t fifo_count_bytes = combine(buffer.FIFO_COUNTH, buffer.FIFO_COUNTL);
 

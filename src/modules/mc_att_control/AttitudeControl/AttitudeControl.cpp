@@ -52,13 +52,9 @@ void AttitudeControl::setProportionalGain(const matrix::Vector3f &proportional_g
 	}
 }
 
-matrix::Vector3f AttitudeControl::update(matrix::Quatf q) const
+matrix::Vector3f AttitudeControl::update(const Quatf &q) const
 {
 	Quatf qd = _attitude_setpoint_q;
-
-	// ensure input quaternions are exactly normalized because acosf(1.00001) == NaN
-	q.normalize();
-	qd.normalize();
 
 	// calculate reduced desired attitude neglecting vehicle's yaw to prioritize roll and pitch
 	const Vector3f e_z = q.dcm_z();
@@ -101,7 +97,9 @@ matrix::Vector3f AttitudeControl::update(matrix::Quatf q) const
 	// and multiply it by the yaw setpoint rate (yawspeed_setpoint).
 	// This yields a vector representing the commanded rotatation around the world z-axis expressed in the body frame
 	// such that it can be added to the rates setpoint.
-	rate_setpoint += q.inversed().dcm_z() * _yawspeed_setpoint;
+	if (is_finite(_yawspeed_setpoint)) {
+		rate_setpoint += q.inversed().dcm_z() * _yawspeed_setpoint;
+	}
 
 	// limit rates
 	for (int i = 0; i < 3; i++) {

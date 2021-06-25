@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-## Bash script to setup PX4 development environment on Ubuntu LTS (18.04, 16.04).
+## Bash script to setup PX4 development environment on Ubuntu LTS (20.04, 18.04, 16.04).
 ## Can also be used in docker.
 ##
 ## Installs:
@@ -11,10 +11,9 @@
 ## Not Installs:
 ## - FastRTPS and FastCDR
 
-set -e
-
 INSTALL_NUTTX="true"
 INSTALL_SIM="true"
+INSTALL_ARCH=`uname -m`
 
 # Parse arguments
 for arg in "$@"
@@ -53,15 +52,15 @@ fi
 
 
 # check ubuntu version
-# instructions for 16.04, 18.04, 20.04
 # otherwise warn and point to docker?
 UBUNTU_RELEASE="`lsb_release -rs`"
 
 if [[ "${UBUNTU_RELEASE}" == "14.04" ]]; then
-	echo "Ubuntu 14.04 unsupported, see docker px4io/px4-dev-base"
+	echo "Ubuntu 14.04 is no longer supported"
 	exit 1
 elif [[ "${UBUNTU_RELEASE}" == "16.04" ]]; then
-	echo "Ubuntu 16.04"
+	echo "Ubuntu 16.04 is no longer supported"
+	exit 1
 elif [[ "${UBUNTU_RELEASE}" == "18.04" ]]; then
 	echo "Ubuntu 18.04"
 elif [[ "${UBUNTU_RELEASE}" == "20.04" ]]; then
@@ -107,7 +106,6 @@ fi
 # Python3 dependencies
 echo
 echo "Installing PX4 Python3 dependencies"
-python3 -m pip install --upgrade pip
 python3 -m pip install --user -r ${DIR}/requirements.txt
 
 # NuttX toolchain (arm-none-eabi-gcc)
@@ -117,18 +115,32 @@ if [[ $INSTALL_NUTTX == "true" ]]; then
 	echo "Installing NuttX dependencies"
 
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
-		autoconf \
 		automake \
+		binutils-dev \
 		bison \
-		bzip2 \
-		file \
+		build-essential \
 		flex \
+		g++-multilib \
+		gcc-multilib \
 		gdb-multiarch \
+		genromfs \
+		gettext \
 		gperf \
-		libncurses-dev \
+		kconfig-frontends \
+		libelf-dev \
+		libexpat-dev \
+		libgmp-dev \
+		libisl-dev \
+		libmpc-dev \
+		libmpfr-dev \
+		libncurses5-dev \
+		libncursesw5-dev \
 		libtool \
 		pkg-config \
 		screen \
+		texinfo \
+		u-boot-tools \
+		util-linux \
 		vim-common \
 		;
 
@@ -138,8 +150,10 @@ if [[ $INSTALL_NUTTX == "true" ]]; then
 	fi
 
 	# arm-none-eabi-gcc
-	NUTTX_GCC_VERSION="7-2017-q4-major"
+	NUTTX_GCC_VERSION="9-2020-q2-update"
+	NUTTX_GCC_VERSION_SHORT="9-2020q2"
 
+	source $HOME/.profile # load changed path for the case the script is reran before relogin
 	if [ $(which arm-none-eabi-gcc) ]; then
 		GCC_VER_STR=$(arm-none-eabi-gcc --version)
 		GCC_FOUND_VER=$(echo $GCC_VER_STR | grep -c "${NUTTX_GCC_VERSION}")
@@ -150,14 +164,13 @@ if [[ $INSTALL_NUTTX == "true" ]]; then
 
 	else
 		echo "Installing arm-none-eabi-gcc-${NUTTX_GCC_VERSION}";
-		wget -O /tmp/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-linux.tar.bz2 https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/7-2017q4/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-linux.tar.bz2 && \
+		wget -O /tmp/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-linux.tar.bz2 https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/${NUTTX_GCC_VERSION_SHORT}/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-${INSTALL_ARCH}-linux.tar.bz2 && \
 			sudo tar -jxf /tmp/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-linux.tar.bz2 -C /opt/;
 
 		# add arm-none-eabi-gcc to user's PATH
 		exportline="export PATH=/opt/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}/bin:\$PATH"
 
-		if grep -Fxq "$exportline" $HOME/.profile;
-		then
+		if grep -Fxq "$exportline" $HOME/.profile; then
 			echo "${NUTTX_GCC_VERSION} path already set.";
 		else
 			echo $exportline >> $HOME/.profile;
@@ -176,28 +189,42 @@ if [[ $INSTALL_SIM == "true" ]]; then
 		bc \
 		;
 
-	# Java 8 (jmavsim or fastrtps)
+	if [[ "${UBUNTU_RELEASE}" == "18.04" ]]; then
+		java_version=11
+		gazebo_version=9
+	elif [[ "${UBUNTU_RELEASE}" == "20.04" ]]; then
+		java_version=14
+		gazebo_version=11
+	else
+		java_version=14
+		gazebo_version=11
+	fi
+	# Java (jmavsim or fastrtps)
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
 		ant \
-		openjdk-8-jre \
-		openjdk-8-jdk \
+		openjdk-$java_version-jre \
+		openjdk-$java_version-jdk \
+		libvecmath-java \
 		;
 
-	# Set Java 8 as default
-	sudo update-alternatives --set java $(update-alternatives --list java | grep "java-8")
+	# Set Java 11 as default
+	sudo update-alternatives --set java $(update-alternatives --list java | grep "java-$java_version")
 
 	# Gazebo
 	sudo sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list'
 	wget http://packages.osrfoundation.org/gazebo.key -O - | sudo apt-key add -
+	# Update list, since new gazebo-stable.list has been added
+	sudo apt-get update -y --quiet
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
-		gazebo9 \
+		dmidecode \
+		gazebo$gazebo_version \
 		gstreamer1.0-plugins-bad \
 		gstreamer1.0-plugins-base \
 		gstreamer1.0-plugins-good \
 		gstreamer1.0-plugins-ugly \
 		gstreamer1.0-libav \
 		libeigen3-dev \
-		libgazebo9-dev \
+		libgazebo$gazebo_version-dev \
 		libgstreamer-plugins-base1.0-dev \
 		libimage-exiftool-perl \
 		libopencv-dev \
@@ -206,9 +233,13 @@ if [[ $INSTALL_SIM == "true" ]]; then
 		protobuf-compiler \
 		;
 
+	if sudo dmidecode -t system | grep -q "Manufacturer: VMware, Inc." ; then
+		# fix VMWare 3D graphics acceleration for gazebo
+		echo "export SVGA_VGPU10=0" >> ~/.profile
+	fi
 fi
 
 if [[ $INSTALL_NUTTX == "true" ]]; then
 	echo
-	echo "Reboot or logout, login computer before attempting to build NuttX targets"
+	echo "Relogin or reboot computer before attempting to build NuttX targets"
 fi

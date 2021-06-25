@@ -108,8 +108,8 @@ PARAM_DEFINE_INT32(SDLOG_MISSION, 0);
  * Logging topic profile (integer bitmask).
  *
  * This integer bitmask controls the set and rates of logged topics.
- * The default allows for general log analysis and estimator replay, while
- * keeping the log file size reasonably small.
+ * The default allows for general log analysis while keeping the
+ * log file size reasonably small.
  *
  * Enabling multiple sets leads to higher bandwidth requirements and larger log
  * files.
@@ -141,7 +141,7 @@ PARAM_DEFINE_INT32(SDLOG_MISSION, 0);
  * @reboot_required true
  * @group SD Logging
  */
-PARAM_DEFINE_INT32(SDLOG_PROFILE, 3);
+PARAM_DEFINE_INT32(SDLOG_PROFILE, 1);
 
 /**
  * Maximum number of log directories to keep

@@ -47,11 +47,11 @@ MPU9250::MPU9250(I2CSPIBusOption bus_option, int bus, uint32_t device, enum Rota
 	SPI(DRV_IMU_DEVTYPE_MPU9250, MODULE_NAME, bus, device, spi_mode, bus_frequency),
 	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus),
 	_drdy_gpio(drdy_gpio),
-	_px4_accel(get_device_id(), ORB_PRIO_HIGH, rotation),
-	_px4_gyro(get_device_id(), ORB_PRIO_HIGH, rotation)
+	_px4_accel(get_device_id(), rotation),
+	_px4_gyro(get_device_id(), rotation)
 {
 	if (drdy_gpio != 0) {
-		_drdy_interval_perf = perf_alloc(PC_INTERVAL, MODULE_NAME": DRDY interval");
+		_drdy_missed_perf = perf_alloc(PC_COUNT, MODULE_NAME": DRDY missed");
 	}
 
 	ConfigureSampleRate(_px4_gyro.get_max_rate_hz());
@@ -77,13 +77,12 @@ MPU9250::MPU9250(I2CSPIBusOption bus_option, int bus, uint32_t device, enum Rota
 
 MPU9250::~MPU9250()
 {
-	perf_free(_transfer_perf);
 	perf_free(_bad_register_perf);
 	perf_free(_bad_transfer_perf);
 	perf_free(_fifo_empty_perf);
 	perf_free(_fifo_overflow_perf);
 	perf_free(_fifo_reset_perf);
-	perf_free(_drdy_interval_perf);
+	perf_free(_drdy_missed_perf);
 
 	delete _slave_ak8963_magnetometer;
 }
@@ -119,15 +118,14 @@ void MPU9250::print_status()
 {
 	I2CSPIDriverBase::print_status();
 
-	PX4_INFO("FIFO empty interval: %d us (%.3f Hz)", _fifo_empty_interval_us, 1e6 / _fifo_empty_interval_us);
+	PX4_INFO("FIFO empty interval: %d us (%.1f Hz)", _fifo_empty_interval_us, 1e6 / _fifo_empty_interval_us);
 
-	perf_print_counter(_transfer_perf);
 	perf_print_counter(_bad_register_perf);
 	perf_print_counter(_bad_transfer_perf);
 	perf_print_counter(_fifo_empty_perf);
 	perf_print_counter(_fifo_overflow_perf);
 	perf_print_counter(_fifo_reset_perf);
-	perf_print_counter(_drdy_interval_perf);
+	perf_print_counter(_drdy_missed_perf);
 
 
 	if (_slave_ak8963_magnetometer) {
@@ -156,7 +154,7 @@ void MPU9250::RunImpl()
 		// PWR_MGMT_1: Device Reset
 		RegisterWrite(Register::PWR_MGMT_1, PWR_MGMT_1_BIT::H_RESET);
 		_reset_timestamp = now;
-		_consecutive_failures = 0;
+		_failure_count = 0;
 		_state = STATE::WAIT_FOR_RESET;
 		ScheduleDelayed(100_ms);
 		break;
@@ -169,11 +167,11 @@ void MPU9250::RunImpl()
 		    && (RegisterRead(Register::PWR_MGMT_1) == 0x01)) {
 
 			// Wakeup and reset digital signal path
-			RegisterWrite(Register::PWR_MGMT_1, 0);
+			RegisterWrite(Register::PWR_MGMT_1, PWR_MGMT_1_BIT::CLKSEL_0);
 			RegisterWrite(Register::SIGNAL_PATH_RESET,
 				      SIGNAL_PATH_RESET_BIT::GYRO_RESET | SIGNAL_PATH_RESET_BIT::ACCEL_RESET | SIGNAL_PATH_RESET_BIT::TEMP_RESET);
-			RegisterWrite(Register::USER_CTRL, USER_CTRL_BIT::I2C_MST_EN | USER_CTRL_BIT::I2C_IF_DIS | USER_CTRL_BIT::I2C_MST_RST |
-				      USER_CTRL_BIT::SIG_COND_RST);
+			RegisterWrite(Register::USER_CTRL, USER_CTRL_BIT::I2C_MST_EN | USER_CTRL_BIT::SIG_COND_RST | USER_CTRL_BIT::I2C_IF_DIS |
+				      USER_CTRL_BIT::I2C_MST_RST);
 
 			// if reset succeeded then configure
 			_state = STATE::CONFIGURE;
@@ -235,8 +233,8 @@ void MPU9250::RunImpl()
 	case STATE::FIFO_READ: {
 			if (_data_ready_interrupt_enabled) {
 				// scheduled from interrupt if _drdy_fifo_read_samples was set
-				if (_drdy_fifo_read_samples.fetch_and(0) == _fifo_gyro_samples) {
-					perf_count_interval(_drdy_interval_perf, now);
+				if (_drdy_fifo_read_samples.fetch_and(0) != _fifo_gyro_samples) {
+					perf_count(_drdy_missed_perf);
 				}
 
 				// push backup schedule back
@@ -267,22 +265,25 @@ void MPU9250::RunImpl()
 				} else if (samples >= 1) {
 					if (FIFORead(now, samples)) {
 						success = true;
-						_consecutive_failures = 0;
+
+						if (_failure_count > 0) {
+							_failure_count--;
+						}
 					}
 				}
 			}
 
 			if (!success) {
-				_consecutive_failures++;
+				_failure_count++;
 
 				// full reset if things are failing consistently
-				if (_consecutive_failures > 10) {
+				if (_failure_count > 10) {
 					Reset();
 					return;
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 10_ms) {
+			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_cfg[_checked_register])) {
 					_last_config_check_timestamp = now;
@@ -364,10 +365,6 @@ void MPU9250::ConfigureGyro()
 
 void MPU9250::ConfigureSampleRate(int sample_rate)
 {
-	if (sample_rate == 0) {
-		sample_rate = 800; // default to 800 Hz
-	}
-
 	// round down to nearest FIFO sample dt * SAMPLES_PER_TRANSFER
 	const float min_interval = FIFO_SAMPLE_DT * SAMPLES_PER_TRANSFER;
 	_fifo_empty_interval_us = math::max(roundf((1e6f / (float)sample_rate) / min_interval) * min_interval, min_interval);
@@ -408,12 +405,12 @@ int MPU9250::DataReadyInterruptCallback(int irq, void *context, void *arg)
 
 void MPU9250::DataReady()
 {
-	const uint8_t count = _drdy_count.fetch_add(1) + 1;
-
-	uint8_t expected = 0;
+	uint32_t expected = 0;
 
 	// at least the required number of samples in the FIFO
-	if ((count >= _fifo_gyro_samples) && _drdy_fifo_read_samples.compare_exchange(&expected, _fifo_gyro_samples)) {
+	if (((_drdy_count.fetch_add(1) + 1) >= _fifo_gyro_samples)
+	    && _drdy_fifo_read_samples.compare_exchange(&expected, _fifo_gyro_samples)) {
+
 		_drdy_count.store(0);
 		ScheduleNow();
 	}
@@ -499,23 +496,58 @@ uint16_t MPU9250::FIFOReadCount()
 	return combine(fifo_count_buf[1], fifo_count_buf[2]);
 }
 
+static bool fifo_accel_equal(const FIFO::DATA &f0, const FIFO::DATA &f1)
+{
+	return (memcmp(&f0.ACCEL_XOUT_H, &f1.ACCEL_XOUT_H, 6) == 0);
+}
+
 bool MPU9250::FIFORead(const hrt_abstime &timestamp_sample, uint8_t samples)
 {
-	perf_begin(_transfer_perf);
 	FIFOTransferBuffer buffer{};
 	const size_t transfer_size = math::min(samples * sizeof(FIFO::DATA) + 1, FIFO::SIZE);
 	set_frequency(SPI_SPEED_SENSOR);
 
 	if (transfer((uint8_t *)&buffer, (uint8_t *)&buffer, transfer_size) != PX4_OK) {
-		perf_end(_transfer_perf);
 		perf_count(_bad_transfer_perf);
 		return false;
 	}
 
-	perf_end(_transfer_perf);
+	uint8_t first_sample = 0;
 
-	ProcessGyro(timestamp_sample, buffer.f, samples);
-	return ProcessAccel(timestamp_sample, buffer.f, samples);
+	if (samples >= 4) {
+		if (fifo_accel_equal(buffer.f[0], buffer.f[1]) && fifo_accel_equal(buffer.f[2], buffer.f[3])) {
+			// [A0, A1, A2, A3]
+			//  A0==A1, A2==A3
+			first_sample = 1;
+
+		} else if (fifo_accel_equal(buffer.f[1], buffer.f[2])) {
+			// [A0, A1, A2, A3]
+			//  A0, A1==A2, A3
+			first_sample = 0;
+
+		} else if (_slave_ak8963_magnetometer && fifo_accel_equal(buffer.f[2], buffer.f[3])) {
+			// if the slave I2C magnetometer is active we tolerate these missing samples, but only if intermittant
+			// [A0, A1, A2, A3]
+			//  A0, A1, A2 == A3
+			first_sample = 2;
+			samples -= 2; // skip first 2 samples
+
+		} else {
+			// no matching accel samples is an error
+			if (!_slave_ak8963_magnetometer) {
+				// if the slave I2C magnetometer is active we tolerate these missing samples, but only if intermittant
+				// consecutive errors will still trigger a full sensor reset
+				perf_count(_bad_transfer_perf);
+			}
+
+			return false;
+		}
+	}
+
+	ProcessGyro(timestamp_sample, &buffer.f[first_sample], samples);
+	ProcessAccel(timestamp_sample, &buffer.f[first_sample], samples);
+
+	return true;
 }
 
 void MPU9250::FIFOReset()
@@ -541,42 +573,14 @@ void MPU9250::FIFOReset()
 	}
 }
 
-static bool fifo_accel_equal(const FIFO::DATA &f0, const FIFO::DATA &f1)
-{
-	return (memcmp(&f0.ACCEL_XOUT_H, &f1.ACCEL_XOUT_H, 6) == 0);
-}
-
-bool MPU9250::ProcessAccel(const hrt_abstime &timestamp_sample, const FIFO::DATA fifo[], const uint8_t samples)
+void MPU9250::ProcessAccel(const hrt_abstime &timestamp_sample, const FIFO::DATA fifo[], const uint8_t samples)
 {
 	sensor_accel_fifo_s accel{};
 	accel.timestamp_sample = timestamp_sample;
 	accel.samples = 0;
 	accel.dt = FIFO_SAMPLE_DT * SAMPLES_PER_TRANSFER;
 
-	bool bad_data = false;
-
-	// accel data is doubled in FIFO, but might be shifted
-	int accel_first_sample = 1;
-
-	if (samples >= 4) {
-		if (fifo_accel_equal(fifo[0], fifo[1]) && fifo_accel_equal(fifo[2], fifo[3])) {
-			// [A0, A1, A2, A3]
-			//  A0==A1, A2==A3
-			accel_first_sample = 1;
-
-		} else if (fifo_accel_equal(fifo[1], fifo[2])) {
-			// [A0, A1, A2, A3]
-			//  A0, A1==A2, A3
-			accel_first_sample = 0;
-
-		} else {
-			// no matching accel samples is an error
-			bad_data = true;
-			perf_count(_bad_transfer_perf);
-		}
-	}
-
-	for (int i = accel_first_sample; i < samples; i = i + SAMPLES_PER_TRANSFER) {
+	for (int i = 0; i < samples; i = i + SAMPLES_PER_TRANSFER) {
 		int16_t accel_x = combine(fifo[i].ACCEL_XOUT_H, fifo[i].ACCEL_XOUT_L);
 		int16_t accel_y = combine(fifo[i].ACCEL_YOUT_H, fifo[i].ACCEL_YOUT_L);
 		int16_t accel_z = combine(fifo[i].ACCEL_ZOUT_H, fifo[i].ACCEL_ZOUT_L);
@@ -595,8 +599,6 @@ bool MPU9250::ProcessAccel(const hrt_abstime &timestamp_sample, const FIFO::DATA
 	if (accel.samples > 0) {
 		_px4_accel.updateFIFO(accel);
 	}
-
-	return !bad_data;
 }
 
 void MPU9250::ProcessGyro(const hrt_abstime &timestamp_sample, const FIFO::DATA fifo[], const uint8_t samples)

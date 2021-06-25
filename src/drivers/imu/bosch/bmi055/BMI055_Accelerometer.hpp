@@ -56,8 +56,8 @@ private:
 	void exit_and_cleanup() override;
 
 	// Sensor Configuration
-	static constexpr uint32_t ACCEL_RATE{2000}; // 2000 Hz accel
-	static constexpr float FIFO_SAMPLE_DT{1e6f / ACCEL_RATE};
+	static constexpr uint32_t RATE{2000}; // 2000 Hz
+	static constexpr float FIFO_SAMPLE_DT{1e6f / RATE};
 
 	static constexpr uint32_t FIFO_MAX_SAMPLES{math::min(FIFO::SIZE / sizeof(FIFO::DATA), sizeof(sensor_accel_fifo_s::x) / sizeof(sensor_accel_fifo_s::x[0]))};
 
@@ -100,18 +100,17 @@ private:
 
 	PX4Accelerometer _px4_accel;
 
-	perf_counter_t _transfer_perf{perf_alloc(PC_ELAPSED, MODULE_NAME"_accel: transfer")};
 	perf_counter_t _bad_register_perf{perf_alloc(PC_COUNT, MODULE_NAME"_accel: bad register")};
 	perf_counter_t _bad_transfer_perf{perf_alloc(PC_COUNT, MODULE_NAME"_accel: bad transfer")};
 	perf_counter_t _fifo_empty_perf{perf_alloc(PC_COUNT, MODULE_NAME"_accel: FIFO empty")};
 	perf_counter_t _fifo_overflow_perf{perf_alloc(PC_COUNT, MODULE_NAME"_accel: FIFO overflow")};
 	perf_counter_t _fifo_reset_perf{perf_alloc(PC_COUNT, MODULE_NAME"_accel: FIFO reset")};
-	perf_counter_t _drdy_interval_perf{nullptr};
+	perf_counter_t _drdy_missed_perf{nullptr};
 
-	uint8_t _fifo_accel_samples{static_cast<uint8_t>(_fifo_empty_interval_us / (1000000 / ACCEL_RATE))};
+	uint8_t _fifo_samples{static_cast<uint8_t>(_fifo_empty_interval_us / (1000000 / RATE))};
 
 	uint8_t _checked_register{0};
-	static constexpr uint8_t size_register_cfg{8};
+	static constexpr uint8_t size_register_cfg{7};
 	register_config_t _register_cfg[size_register_cfg] {
 		// Register                    | Set bits, Clear bits
 		{ Register::PMU_RANGE,         PMU_RANGE_BIT::range_16g, Bit1 | Bit0},
@@ -119,7 +118,6 @@ private:
 		{ Register::INT_EN_1,          INT_EN_1_BIT::int_fwm_en, 0},
 		{ Register::INT_MAP_1,         INT_MAP_1_BIT::int1_fwm, 0},
 		{ Register::INT_OUT_CTRL,      0, INT_OUT_CTRL_BIT::int1_od | INT_OUT_CTRL_BIT::int1_lvl},
-		{ Register::INT_RST_LATCH,     INT_RST_LATCH_BIT::temporary_250us, 0},
 		{ Register::FIFO_CONFIG_0,     0, 0 }, // fifo_water_mark_level_trigger_retain<5:0>
 		{ Register::FIFO_CONFIG_1,     FIFO_CONFIG_1_BIT::fifo_mode, 0},
 	};

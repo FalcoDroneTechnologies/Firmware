@@ -63,7 +63,7 @@ all: px4_sitl_default
 space := $(subst ,, )
 
 define make_list
-     $(shell cat .github/workflows/compile_${1}.yml | sed -E 's/[[:space:]]+(.*),/check_\1/g' | grep check_${2})
+     $(shell [ -f .github/workflows/compile_${1}.yml ] && cat .github/workflows/compile_${1}.yml | sed -E 's|[[:space:]]+(.*),|check_\1|g' | grep check_${2})
 endef
 
 # Parsing
@@ -77,7 +77,7 @@ ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 # Get -j or --jobs argument as suggested in:
 # https://stackoverflow.com/a/33616144/8548472
 MAKE_PID := $(shell echo $$PPID)
-j := $(shell ps T | sed -n 's/.*$(MAKE_PID).*$(MAKE).* \(-j\|--jobs\) *\([0-9][0-9]*\).*/\2/p')
+j := $(shell ps T | sed -n 's|.*$(MAKE_PID).*$(MAKE).* \(-j\|--jobs\) *\([0-9][0-9]*\).*|\2|p')
 
 # Default j for clang-tidy
 j_clang_tidy := $(or $(j),4)
@@ -165,6 +165,11 @@ ifdef PYTHON_EXECUTABLE
 	CMAKE_ARGS += -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
 endif
 
+# Check if the microRTPS agent is to be built
+ifdef BUILD_MICRORTPS_AGENT
+  CMAKE_ARGS += -DBUILD_MICRORTPS_AGENT=ON
+endif
+
 # Functions
 # --------------------------------------------------------------------
 # describe how to build a cmake config
@@ -174,6 +179,8 @@ define cmake-build
 	@$(call cmake-cache-check)
 	@# make sure to start from scratch when switching from GNU Make to Ninja
 	@if [ $(PX4_CMAKE_GENERATOR) = "Ninja" ] && [ -e $(BUILD_DIR)/Makefile ]; then rm -rf $(BUILD_DIR); fi
+	@# make sure to start from scratch if ninja build file is missing
+	@if [ $(PX4_CMAKE_GENERATOR) = "Ninja" ] && [ ! -f $(BUILD_DIR)/build.ninja ]; then rm -rf $(BUILD_DIR); fi
 	@# only excplicitly configure the first build, if cache file already exists the makefile will rerun cmake automatically if necessary
 	@if [ ! -e $(BUILD_DIR)/CMakeCache.txt ] || [ $(CMAKE_CACHE_CHECK) ]; then \
 		mkdir -p $(BUILD_DIR) \
@@ -189,9 +196,9 @@ endef
 define cmake-cache-check
 	@# change to build folder which fails if it doesn't exist and CACHED_CMAKE_OPTIONS stays empty
 	@# fetch all previously configured and cached options from the build folder and transform them into the OPTION=VALUE format without type (e.g. :BOOL)
-	@$(eval CACHED_CMAKE_OPTIONS = $(shell cd $(BUILD_DIR) 2>/dev/null && cmake -L 2>/dev/null | sed -n 's/\([^[:blank:]]*\):[^[:blank:]]*\(=[^[:blank:]]*\)/\1\2/gp' ))
+	@$(eval CACHED_CMAKE_OPTIONS = $(shell cd $(BUILD_DIR) 2>/dev/null && cmake -L 2>/dev/null | sed -n 's|\([^[:blank:]]*\):[^[:blank:]]*\(=[^[:blank:]]*\)|\1\2|gp' ))
 	@# transform the options in CMAKE_ARGS into the OPTION=VALUE format without -D
-	@$(eval DESIRED_CMAKE_OPTIONS = $(shell echo $(CMAKE_ARGS) | sed -n 's/-D\([^[:blank:]]*=[^[:blank:]]*\)/\1/gp' ))
+	@$(eval DESIRED_CMAKE_OPTIONS = $(shell echo $(CMAKE_ARGS) | sed -n 's|-D\([^[:blank:]]*=[^[:blank:]]*\)|\1|gp' ))
 	@# find each currently desired option in the already cached ones making sure the complete configured string value is the same
 	@$(eval VERIFIED_CMAKE_OPTIONS = $(foreach option,$(DESIRED_CMAKE_OPTIONS),$(strip $(findstring $(option)$(space),$(CACHED_CMAKE_OPTIONS)))))
 	@# if the complete list of desired options is found in the list of verified options we don't need to reconfigure and CMAKE_CACHE_CHECK stays empty
@@ -206,7 +213,7 @@ define colorecho
 endef
 
 # Get a list of all config targets boards/*/*.cmake
-ALL_CONFIG_TARGETS := $(shell find boards -maxdepth 3 -mindepth 3 ! -name '*common*' ! -name '*sdflight*' -name '*.cmake' -print | sed -e 's/boards\///' | sed -e 's/\.cmake//' | sed -e 's/\//_/g' | sort)
+ALL_CONFIG_TARGETS := $(shell find boards -maxdepth 3 -mindepth 3 ! -name '*common*' ! -name '*sdflight*' -name '*.cmake' -print | sed -e 's|boards\/||' | sed -e 's|\.cmake||' | sed -e 's|\/|_|g' | sort)
 
 # ADD CONFIGS HERE
 # --------------------------------------------------------------------
@@ -268,9 +275,9 @@ px4fmu_firmware: \
 misc_qgc_extra_firmware: \
 	check_nxp_fmuk66-v3_default \
 	check_nxp_fmurt1062-v1_default \
-	check_intel_aerofc-v1_default \
 	check_mro_x21_default \
 	check_bitcraze_crazyflie_default \
+	check_bitcraze_crazyflie21_default \
 	check_airmind_mindpx-v2_default \
 	check_px4_fmu-v2_lpe \
 	sizes
@@ -301,8 +308,7 @@ check_%:
 	@echo
 
 uorb_graphs:
-	@./Tools/uorb_graph/create_from_startupscript.sh
-	@./Tools/uorb_graph/create.py --src-path src --exclude-path src/examples --file Tools/uorb_graph/graph_full
+	@./Tools/uorb_graph/create.py --src-path src --exclude-path src/examples --exclude-path src/lib --file Tools/uorb_graph/graph_full
 	@$(MAKE) --no-print-directory px4_fmu-v2_default uorb_graph
 	@$(MAKE) --no-print-directory px4_fmu-v4_default uorb_graph
 	@$(MAKE) --no-print-directory px4_sitl_default uorb_graph
@@ -317,7 +323,7 @@ coverity_scan: px4_sitl_default
 .PHONY: parameters_metadata airframe_metadata module_documentation px4_metadata doxygen
 
 parameters_metadata:
-	@$(MAKE) --no-print-directory px4_sitl_default metadata_parameters
+	@$(MAKE) --no-print-directory px4_sitl_default metadata_parameters ver_gen
 
 airframe_metadata:
 	@$(MAKE) --no-print-directory px4_sitl_default metadata_airframes
@@ -361,8 +367,10 @@ tests:
 
 tests_coverage:
 	@$(MAKE) clean
-	@$(MAKE) --no-print-directory px4_sitl_default test_coverage_genhtml PX4_CMAKE_BUILD_TYPE=Coverage
-	@echo "Open "$(SRC_DIR)"/build/px4_sitl_default/coverage-html/index.html to see coverage"
+	@$(MAKE) --no-print-directory tests PX4_CMAKE_BUILD_TYPE=Coverage
+	@mkdir -p coverage
+	@lcov --directory build/px4_sitl_test --base-directory build/px4_sitl_test --gcov-tool gcov --capture -o coverage/lcov.info
+
 
 rostest: px4_sitl_default
 	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
@@ -370,14 +378,14 @@ rostest: px4_sitl_default
 tests_integration: px4_sitl_default
 	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
 	@$(MAKE) --no-print-directory px4_sitl_default mavsdk_tests
-	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 100
+	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 20 test/mavsdk_tests/configs/sitl.json
 
 tests_integration_coverage:
 	@$(MAKE) clean
 	@$(MAKE) --no-print-directory px4_sitl_default PX4_CMAKE_BUILD_TYPE=Coverage
 	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
 	@$(MAKE) --no-print-directory px4_sitl_default mavsdk_tests
-	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 100
+	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 20 test/mavsdk_tests/configs/sitl.json
 	@mkdir -p coverage
 	@lcov --directory build/px4_sitl_default --base-directory build/px4_sitl_default --gcov-tool gcov --capture -o coverage/lcov.info
 
@@ -465,25 +473,27 @@ validate_module_configs:
 .PHONY: clean submodulesclean submodulesupdate gazeboclean distclean
 
 clean:
-	@rm -rf "$(SRC_DIR)"/build
+	@[ ! -d "$(SRC_DIR)/build" ] || find "$(SRC_DIR)/build" -mindepth 1 -maxdepth 1 -type d -exec sh -c "echo {}; cmake --build {} -- clean || rm -rf {}" \; # use generated build system to clean, wipe build directory if it fails
+	@git submodule foreach git clean -dX --force # some submodules generate build artifacts in source
 
 submodulesclean:
 	@git submodule foreach --quiet --recursive git clean -ff -x -d
 	@git submodule update --quiet --init --recursive --force || true
 	@git submodule sync --recursive
-	@git submodule update --init --recursive --force
+	@git submodule update --init --recursive --force --jobs 4
 
 submodulesupdate:
-	@git submodule update --quiet --init --recursive || true
+	@git submodule update --quiet --init --recursive --jobs 4 || true
 	@git submodule sync --recursive
-	@git submodule update --init --recursive
+	@git submodule update --init --recursive --jobs 4
 
 gazeboclean:
 	@rm -rf ~/.gazebo/*
 
 distclean: gazeboclean
-	@git submodule deinit -f .
-	@git clean -ff -x -d -e ".project" -e ".cproject" -e ".idea" -e ".settings" -e ".vscode"
+	@git submodule deinit --force $(SRC_DIR)
+	@rm -rf "$(SRC_DIR)/build"
+	@git clean --force -X "$(SRC_DIR)/msg/" "$(SRC_DIR)/platforms/" "$(SRC_DIR)/posix-configs/" "$(SRC_DIR)/ROMFS/" "$(SRC_DIR)/src/" "$(SRC_DIR)/test/" "$(SRC_DIR)/Tools/"
 
 # Help / Error
 # --------------------------------------------------------------------
